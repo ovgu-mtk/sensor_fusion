@@ -176,7 +176,6 @@ class OfflineModelEvaluator:
         return self._create_height_map_grid(lidar_points)
 
     def _create_height_map_grid(self, lidar_points):
-        """Grid-Erstellung IDENTISCH zum DataGenerator"""
         if len(lidar_points) == 0:
             return np.zeros((self.grid_size, self.grid_size, 1), dtype=np.float32)
 
@@ -331,127 +330,304 @@ class OfflineModelEvaluator:
     # ----------------------------------------------------
     #  Visualisierung
     # ----------------------------------------------------
+    def _draw_sensor_platform(self, ax):
+        """Draw sensor platform rectangle and direction triangle on given axes."""
+        vehicle_length = 3.40  # 340 cm
+        vehicle_width = 1.125  # 112.5 cm
+
+        vehicle_x_rear = -2.76
+        vehicle_x_front = 0.64
+        vehicle_y_bottom = -vehicle_width / 2
+        vehicle_y_top = vehicle_width / 2
+
+        # Draw sensor platform rectangle
+        vehicle_rect = Rectangle(
+            (vehicle_x_rear, vehicle_y_bottom),
+            vehicle_length,
+            vehicle_width,
+            linewidth=2.5,
+            edgecolor='darkgreen',
+            facecolor='white',
+            alpha=0.3,
+            zorder=10
+        )
+        ax.add_patch(vehicle_rect)
+
+        # Draw sensor platform triangle (x-direction indicator)
+        arrow_length = vehicle_width
+        arrow_width = vehicle_width
+        arrow_x_center = vehicle_x_front - arrow_length / 2
+
+        triangle = Polygon(
+            [
+                [arrow_x_center + arrow_length / 2, 0],  # front
+                [arrow_x_center - arrow_length / 2, arrow_width / 2],  # top edge
+                [arrow_x_center - arrow_length / 2, -arrow_width / 2]  # bottom edge
+            ],
+            closed=True,
+            linewidth=1.5,
+            edgecolor='darkgreen',
+            facecolor='white',
+            alpha=0.6,
+            zorder=10
+        )
+        ax.add_patch(triangle)
+
+        return vehicle_x_rear, vehicle_x_front, vehicle_y_bottom, vehicle_y_top
+
+    def _plot_trajectory_segments(self, ax, positions, driver_present):
+        """Plot trajectory with color-coded segments based on sensor availability."""
+        i = 0
+        has_lidar = False
+        has_uwb_only = False
+
+        while i < len(positions):
+            current_state = driver_present[i]
+            j = i
+            while j < len(positions) and driver_present[j] == current_state:
+                j += 1
+
+            # Include one extra point for smooth transition (if available)
+            end_idx = min(j + 1, len(positions))
+            segment = positions[i:end_idx]
+
+            if current_state == 1:  # UWB + LiDAR
+                ax.plot(segment[:, 0], segment[:, 1], 'b-', linewidth=1.5, zorder=5)
+                has_lidar = True
+            else:  # UWB only
+                ax.plot(segment[:, 0], segment[:, 1], 'm-', linewidth=1.5, zorder=5)
+                has_uwb_only = True
+
+            i = j
+
+        return has_lidar, has_uwb_only
+
     def plot_results(self):
         if not hasattr(self, 'preds'):
             raise RuntimeError("Run inference first")
 
-        plt.figure(figsize=(8, 8))
-        plt.plot(self.gts[:, 0], self.gts[:, 1], 'b-', label='Ground Truth')
-        plt.plot(self.preds[:, 0], self.preds[:, 1], 'r--', label='Prediction')
-        plt.xlabel("X [m]")
-        plt.ylabel("Y [m]")
-        plt.legend()
-        plt.title("Trajectory Comparison: True vs Predicted")
-        plt.axis("equal")
-        plt.grid(True)
+        # === Plot 0: Validation pattern ===
+        fig, ax = plt.subplots(figsize=(12, 10))
+
+        # Draw sensor platform
+        veh_x_rear, veh_x_front, veh_y_bottom, veh_y_top = self._draw_sensor_platform(ax)
+
+        # Plot ground truth with segments
+        has_lidar_gt, has_uwb_gt = self._plot_trajectory_segments(ax, self.gts, self.driver_present_array)
+
+        # Legend
+        legend_elements = [
+            Line2D([0], [0], color='darkgreen', linewidth=2.5, label='Sensor platform (3.40m × 1.13m)')
+        ]
+        if has_lidar_gt:
+            legend_elements.append(Line2D([0], [0], color='b', linewidth=2, label='Ground Truth (UWB + LiDAR)'))
+        if has_uwb_gt:
+            legend_elements.append(Line2D([0], [0], color='m', linewidth=2, label='Ground Truth (UWB only)'))
+
+        ax.legend(handles=legend_elements, fontsize=10, loc='upper right')
+        ax.set_xlabel("X [m]", fontsize=12)
+        ax.set_ylabel("Y [m]", fontsize=12)
+        ax.set_title("Ground Truth", fontsize=14)
+        ax.axis("equal")
+        ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+
+        # Adjust limits
+        x_min = min(self.gts[:, 0].min(), self.preds[:, 0].min(), veh_x_rear - 0.5)
+        x_max = max(self.gts[:, 0].max(), self.preds[:, 0].max(), veh_x_front + 0.5)
+        y_min = min(self.gts[:, 1].min(), self.preds[:, 1].min(), veh_y_bottom - 0.5)
+        y_max = max(self.gts[:, 1].max(), self.preds[:, 1].max(), veh_y_top + 0.5)
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
         plt.tight_layout()
         plt.show()
 
-        plt.figure(figsize=(8, 8))
-        plt.plot(self.gts[:, 0], self.gts[:, 1], 'b-', label='Ground Truth')
-        plt.plot(self.uwbs[:, 0], self.uwbs[:, 1], 'g--', label='UWB raw')
-        plt.xlabel("X [m]")
-        plt.ylabel("Y [m]")
-        plt.legend()
-        plt.title("Trajectory Comparison: True vs UWB")
-        plt.axis("equal")
-        plt.grid(True)
+
+        # === Plot 1: Ground Truth vs Prediction ===
+        fig, ax = plt.subplots(figsize=(12, 10))
+
+        # Draw sensor platform
+        veh_x_rear, veh_x_front, veh_y_bottom, veh_y_top = self._draw_sensor_platform(ax)
+
+        # Plot ground truth with segments
+        has_lidar_gt, has_uwb_gt = self._plot_trajectory_segments(ax, self.gts, self.driver_present_array)
+
+        # Plot prediction
+        ax.plot(self.preds[:, 0], self.preds[:, 1], 'r--', linewidth=2, label='Prediction', zorder=6)
+
+        # Legend
+        legend_elements = [
+            Line2D([0], [0], color='darkgreen', linewidth=2.5, label='Sensor platform (3.40m × 1.13m)'),
+            Line2D([0], [0], color='r', linewidth=2, linestyle='--', label='Prediction')
+        ]
+        if has_lidar_gt:
+            legend_elements.append(Line2D([0], [0], color='b', linewidth=2, label='Ground Truth (UWB + LiDAR)'))
+        if has_uwb_gt:
+            legend_elements.append(Line2D([0], [0], color='m', linewidth=2, label='Ground Truth (UWB only)'))
+
+        ax.legend(handles=legend_elements, fontsize=10, loc='upper right')
+        ax.set_xlabel("X [m]", fontsize=12)
+        ax.set_ylabel("Y [m]", fontsize=12)
+        ax.set_title("Ground Truth vs. Model Prediction", fontsize=14)
+        ax.axis("equal")
+        ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+
+        # Adjust limits
+        x_min = min(self.gts[:, 0].min(), self.preds[:, 0].min(), veh_x_rear - 0.5)
+        x_max = max(self.gts[:, 0].max(), self.preds[:, 0].max(), veh_x_front + 0.5)
+        y_min = min(self.gts[:, 1].min(), self.preds[:, 1].min(), veh_y_bottom - 0.5)
+        y_max = max(self.gts[:, 1].max(), self.preds[:, 1].max(), veh_y_top + 0.5)
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
         plt.tight_layout()
         plt.show()
 
-        plt.figure(figsize=(8, 8))
-        plt.plot(self.gts[:, 0], self.gts[:, 1], 'b-', label='Ground Truth')
-        plt.plot(self.uwbs_filtered[:, 0], self.uwbs_filtered[:, 1], 'y--', label='UWB filtered (orig)')
-        plt.xlabel("X [m]")
-        plt.ylabel("Y [m]")
-        plt.legend()
-        plt.title("Trajectory Comparison: True vs UWB filtered (orig)")
-        plt.axis("equal")
-        plt.grid(True)
+        # === Plot 2: Ground Truth vs UWB Raw ===
+        fig, ax = plt.subplots(figsize=(12, 10))
+        veh_x_rear, veh_x_front, veh_y_bottom, veh_y_top = self._draw_sensor_platform(ax)
+        has_lidar_gt, has_uwb_gt = self._plot_trajectory_segments(ax, self.gts, self.driver_present_array)
+        ax.plot(self.uwbs[:, 0], self.uwbs[:, 1], 'r--', linewidth=2, label='UWB raw', zorder=6)
+
+        legend_elements = [
+            Line2D([0], [0], color='darkgreen', linewidth=2.5, label='Sensor platform (3.40m × 1.13m)'),
+            Line2D([0], [0], color='r', linewidth=2, linestyle='--', label='UWB raw')
+        ]
+        if has_lidar_gt:
+            legend_elements.append(Line2D([0], [0], color='b', linewidth=2, label='Ground Truth (UWB + LiDAR)'))
+        if has_uwb_gt:
+            legend_elements.append(Line2D([0], [0], color='m', linewidth=2, label='Ground Truth (UWB only)'))
+
+        ax.legend(handles=legend_elements, fontsize=10, loc='upper right')
+        ax.set_xlabel("X [m]", fontsize=12)
+        ax.set_ylabel("Y [m]", fontsize=12)
+        ax.set_title("Ground Truth vs. UWB Raw", fontsize=14)
+        ax.axis("equal")
+        ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+
+        x_min = min(self.gts[:, 0].min(), self.uwbs[:, 0].min(), veh_x_rear - 0.5)
+        x_max = max(self.gts[:, 0].max(), self.uwbs[:, 0].max(), veh_x_front + 0.5)
+        y_min = min(self.gts[:, 1].min(), self.uwbs[:, 1].min(), veh_y_bottom - 0.5)
+        y_max = max(self.gts[:, 1].max(), self.uwbs[:, 1].max(), veh_y_top + 0.5)
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
         plt.tight_layout()
         plt.show()
 
-        plt.figure(figsize=(8, 8))
-        plt.plot(self.gts[:, 0], self.gts[:, 1], 'b-', label='Ground Truth')
-        plt.plot(self.uwbs_ukf[:, 0], self.uwbs_ukf[:, 1], 'm--', label='UWB UKF CA')
-        plt.xlabel("X [m]")
-        plt.ylabel("Y [m]")
-        plt.legend()
-        plt.title("Trajectory Comparison: True vs UWB UKF (const accel)")
-        plt.axis("equal")
-        plt.grid(True)
+        # === Plot 3: Ground Truth vs UWB Filtered (EKF) ===
+        fig, ax = plt.subplots(figsize=(12, 10))
+        veh_x_rear, veh_x_front, veh_y_bottom, veh_y_top = self._draw_sensor_platform(ax)
+        has_lidar_gt, has_uwb_gt = self._plot_trajectory_segments(ax, self.gts, self.driver_present_array)
+        ax.plot(self.uwbs_filtered[:, 0], self.uwbs_filtered[:, 1], 'r--', linewidth=2, label='UWB filtered (orig)',
+                zorder=6)
+
+        legend_elements = [
+            Line2D([0], [0], color='darkgreen', linewidth=2.5, label='Sensor platform (3.40m × 1.13m)'),
+            Line2D([0], [0], color='r', linewidth=2, linestyle='--', label='UWB filtered (orig)')
+        ]
+        if has_lidar_gt:
+            legend_elements.append(Line2D([0], [0], color='b', linewidth=2, label='Ground Truth (UWB + LiDAR)'))
+        if has_uwb_gt:
+            legend_elements.append(Line2D([0], [0], color='m', linewidth=2, label='Ground Truth (UWB only)'))
+
+        ax.legend(handles=legend_elements, fontsize=10, loc='upper right')
+        ax.set_xlabel("X [m]", fontsize=12)
+        ax.set_ylabel("Y [m]", fontsize=12)
+        ax.set_title("Ground Truth vs. UWB Filtered (EKF)", fontsize=14)
+        ax.axis("equal")
+        ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+
+        x_min = min(self.gts[:, 0].min(), self.uwbs_filtered[:, 0].min(), veh_x_rear - 0.5)
+        x_max = max(self.gts[:, 0].max(), self.uwbs_filtered[:, 0].max(), veh_x_front + 0.5)
+        y_min = min(self.gts[:, 1].min(), self.uwbs_filtered[:, 1].min(), veh_y_bottom - 0.5)
+        y_max = max(self.gts[:, 1].max(), self.uwbs_filtered[:, 1].max(), veh_y_top + 0.5)
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
         plt.tight_layout()
         plt.show()
 
-        # Fehler über Zeit Predicted
+        # === Plot 4: Ground Truth vs UWB UKF ===
+        fig, ax = plt.subplots(figsize=(12, 10))
+        veh_x_rear, veh_x_front, veh_y_bottom, veh_y_top = self._draw_sensor_platform(ax)
+        has_lidar_gt, has_uwb_gt = self._plot_trajectory_segments(ax, self.gts, self.driver_present_array)
+        ax.plot(self.uwbs_ukf[:, 0], self.uwbs_ukf[:, 1], 'r--', linewidth=2, label='UWB UKF CA', zorder=6)
+
+        legend_elements = [
+            Line2D([0], [0], color='darkgreen', linewidth=2.5, label='Sensor platform (3.40m × 1.13m)'),
+            Line2D([0], [0], color='r', linewidth=2, linestyle='--', label='UWB UKF CA')
+        ]
+        if has_lidar_gt:
+            legend_elements.append(Line2D([0], [0], color='b', linewidth=2, label='Ground Truth (UWB + LiDAR)'))
+        if has_uwb_gt:
+            legend_elements.append(Line2D([0], [0], color='m', linewidth=2, label='Ground Truth (UWB only)'))
+
+        ax.legend(handles=legend_elements, fontsize=10, loc='upper right')
+        ax.set_xlabel("X [m]", fontsize=12)
+        ax.set_ylabel("Y [m]", fontsize=12)
+        ax.set_title("Ground Truth vs. UWB Filtered (UKF - const accel)", fontsize=14)
+        ax.axis("equal")
+        ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+
+        x_min = min(self.gts[:, 0].min(), self.uwbs_ukf[:, 0].min(), veh_x_rear - 0.5)
+        x_max = max(self.gts[:, 0].max(), self.uwbs_ukf[:, 0].max(), veh_x_front + 0.5)
+        y_min = min(self.gts[:, 1].min(), self.uwbs_ukf[:, 1].min(), veh_y_bottom - 0.5)
+        y_max = max(self.gts[:, 1].max(), self.uwbs_ukf[:, 1].max(), veh_y_top + 0.5)
+        ax.set_xlim(x_min, x_max)
+        ax.set_ylim(y_min, y_max)
+        plt.tight_layout()
+        plt.show()
+
+        # === Error Plots (keep original style) ===
+        # Prediction Error
         errors = np.linalg.norm(self.preds - self.gts, axis=1)
-        plt.figure()
+        plt.figure(figsize=(10, 4))
         plt.plot(errors, label='Position Error [m]')
         plt.xlabel("Frame")
         plt.ylabel("Euclidean Error [m]")
         plt.title("Prediction Error over Time")
         plt.grid(True)
         plt.legend()
+        plt.tight_layout()
         plt.show()
 
-        # Fehler über Zeit UWB
+        # UWB Raw Error
         errors = np.linalg.norm(self.uwbs - self.gts, axis=1)
-        plt.figure()
-        plt.plot(errors, label='UWB raw Error [m]')
+        plt.figure(figsize=(10, 4))
+        plt.plot(errors, label='UWB raw Error [m]', color='g')
         plt.xlabel("Frame")
         plt.ylabel("Euclidean Error [m]")
         plt.title("UWB Raw Error over Time")
         plt.grid(True)
         plt.legend()
+        plt.tight_layout()
         plt.show()
 
-        # Fehler über Zeit UWB Filtered (orig)
+        # UWB Filtered Error
         errors = np.linalg.norm(self.uwbs_filtered - self.gts, axis=1)
-        plt.figure()
-        plt.plot(errors, label='UWB filtered (orig) Error [m]')
+        plt.figure(figsize=(10, 4))
+        plt.plot(errors, label='UWB filtered (orig) Error [m]', color='y')
         plt.xlabel("Frame")
         plt.ylabel("Euclidean Error [m]")
         plt.title("UWB Filtered (orig) Error over Time")
         plt.grid(True)
         plt.legend()
+        plt.tight_layout()
         plt.show()
 
-        # Fehler über Zeit UWB UKF
+        # UWB UKF Error
         errors = np.linalg.norm(self.uwbs_ukf - self.gts, axis=1)
-        plt.figure()
-        plt.plot(errors, label='UWB UKF (CA) Error [m]')
+        plt.figure(figsize=(10, 4))
+        plt.plot(errors, label='UWB UKF (CA) Error [m]', color='c')
         plt.xlabel("Frame")
         plt.ylabel("Euclidean Error [m]")
         plt.title("UWB UKF (constant accel) Error over Time")
         plt.grid(True)
         plt.legend()
-        plt.show()
-
-    def plot_validation_pattern(self):
-        gts = []
-
-        for i in tqdm(range(self.num_samples)):
-            gt_point = self.position_data[i]
-
-            gts.append([gt_point[0], gt_point[1]])
-
-
-        # Ergebnis als numpy arrays
-        self.gts = np.array(gts)
-
-        plt.figure(figsize=(8, 8))
-        plt.plot(self.gts[:, 0], self.gts[:, 1], 'b-', label='Ground Truth')
-        plt.xlabel("X [m]")
-        plt.ylabel("Y [m]")
-        plt.legend()
-        plt.axis("equal")
-        plt.grid(True)
         plt.tight_layout()
         plt.show()
 
-        # ----------------------------------------------------
-        #  Metriken berechnen
-        # ----------------------------------------------------
+
+    # ----------------------------------------------------
+    #  Metriken berechnen
+    # ----------------------------------------------------
 
     def compute_metrics(self):
         if not hasattr(self, 'preds'):
@@ -497,382 +673,18 @@ class OfflineModelEvaluator:
 
         return results
 
-    def plot_validation_pattern_split(self):
-        gts = []
-        driver_present_array = []
-
-        for i in tqdm(range(self.num_samples)):
-            gt_point = self.position_data[i]
-            gts.append([gt_point[0], gt_point[1]])
-            driver_present_array.append(self.driver_present[i])
-
-        # Ergebnis als numpy arrays
-        gts = np.array(gts)
-        driver_present_array = np.array(driver_present_array)
-
-        plt.figure(figsize=(10, 10))
-
-        # Segmente basierend auf Zustandswechseln erstellen
-        i = 0
-        has_lidar = False
-        has_uwb_only = False
-
-        while i < len(gts):
-            # Aktuellen Zustand ermitteln
-            current_state = driver_present_array[i]
-
-            # Finde Ende des aktuellen Segments (gleicher Zustand)
-            j = i
-            while j < len(gts) and driver_present_array[j] == current_state:
-                j += 1
-
-            # Segment plotten
-            segment = gts[i:j]
-            if current_state == 1:  # UWB + LiDAR
-                plt.plot(segment[:, 0], segment[:, 1], 'b-', linewidth=2)
-                has_lidar = True
-            else:  # Nur UWB
-                plt.plot(segment[:, 0], segment[:, 1], 'm-', linewidth=2)
-                has_uwb_only = True
-
-            i = j
-
-        # Legende nur mit tatsächlich vorhandenen Zuständen
-        from matplotlib.lines import Line2D
-        legend_elements = []
-        if has_lidar:
-            legend_elements.append(Line2D([0], [0], color='b', linewidth=2,
-                                          label='UWB + LiDAR (Zielperson sichtbar)'))
-        if has_uwb_only:
-            legend_elements.append(Line2D([0], [0], color='m', linewidth=2,
-                                          label='Nur UWB (Zielperson nicht sichtbar)'))
-
-        plt.legend(handles=legend_elements, fontsize=10)
-        plt.xlabel("X [m]", fontsize=12)
-        plt.ylabel("Y [m]", fontsize=12)
-        plt.title("Ground Truth Trajektorie - LiDAR Sichtbarkeit", fontsize=14)
-        plt.axis("equal")
-        plt.grid(True, alpha=0.3)
-        plt.tight_layout()
-        plt.show()
-
-        # Statistik ausgeben
-        total_samples = len(driver_present_array)
-        lidar_samples = np.sum(driver_present_array == 1)
-        uwb_only_samples = np.sum(driver_present_array == 0)
-
-        print(f"\n=== Validierungsdaten Statistik ===")
-        print(f"Gesamt Samples: {total_samples}")
-        print(f"UWB + LiDAR: {lidar_samples} ({100 * lidar_samples / total_samples:.1f}%)")
-        print(f"Nur UWB: {uwb_only_samples} ({100 * uwb_only_samples / total_samples:.1f}%)")
-        print(f"===================================\n")
-
-    def plot_validation_pattern_split_detailed(self):
-        """Erweiterte Version mit mehr Details"""
-        gts = []
-        driver_present_array = []
-
-        for i in tqdm(range(self.num_samples)):
-            gt_point = self.position_data[i]
-            gts.append([gt_point[0], gt_point[1]])
-            driver_present_array.append(self.driver_present[i])
-
-        gts = np.array(gts)
-        driver_present_array = np.array(driver_present_array)
-
-        fig, ax = plt.subplots(figsize=(14, 10))
-
-        # Fahrzeugabmessungen
-        vehicle_length = 3.40
-        vehicle_width = 1.125
-        vehicle_x_rear = -3.00
-        vehicle_x_front = 0.40
-        vehicle_y_bottom = -vehicle_width / 2
-        vehicle_y_top = vehicle_width / 2
-
-        # Fahrzeug zeichnen
-        vehicle_rect = Rectangle(
-            (vehicle_x_rear, vehicle_y_bottom),
-            vehicle_length,
-            vehicle_width,
-            linewidth=2.5,
-            edgecolor='darkgreen',
-            facecolor='lightgreen',
-            alpha=0.4,
-            zorder=10
-        )
-        ax.add_patch(vehicle_rect)
-
-        # Fahrtrichtungspfeil
-        arrow_length = 0.8
-        arrow_width = 0.4
-        arrow_x_center = vehicle_x_front - 0.5
-
-        triangle = Polygon(
-            [
-                [arrow_x_center - arrow_length / 2, 0],
-                [arrow_x_center + arrow_length / 2, arrow_width / 2],
-                [arrow_x_center + arrow_length / 2, -arrow_width / 2]
-            ],
-            closed=True,
-            linewidth=2,
-            edgecolor='darkgreen',
-            facecolor='green',
-            alpha=0.7,
-            zorder=11
-        )
-        ax.add_patch(triangle)
-
-        # Origin
-        ax.scatter(0, 0, c='red', marker='x', s=250, linewidths=4,
-                   zorder=12, label='Origin')
-        ax.plot([0, 0], [-0.3, 0.3], 'r--', linewidth=1, alpha=0.5, zorder=12)
-        ax.plot([-0.3, 0.3], [0, 0], 'r--', linewidth=1, alpha=0.5, zorder=12)
-
-        # Fahrzeug-Dimensionslinien
-        ax.annotate('', xy=(vehicle_x_front, vehicle_y_bottom - 0.3),
-                    xytext=(vehicle_x_rear, vehicle_y_bottom - 0.3),
-                    arrowprops=dict(arrowstyle='<->', color='darkgreen', lw=1.5))
-        ax.text((vehicle_x_rear + vehicle_x_front) / 2, vehicle_y_bottom - 0.5,
-                f'{vehicle_length:.2f}m', ha='center', fontsize=9,
-                color='darkgreen', fontweight='bold')
-
-        # Trajektorie plotten
-        i = 0
-        has_lidar = False
-        has_uwb_only = False
-
-        while i < len(gts):
-            current_state = driver_present_array[i]
-            j = i
-            while j < len(gts) and driver_present_array[j] == current_state:
-                j += 1
-
-            segment = gts[i:j]
-            if current_state == 1:
-                ax.plot(segment[:, 0], segment[:, 1], 'b-', linewidth=2.5,
-                        alpha=0.8, zorder=5)
-                has_lidar = True
-            else:
-                ax.plot(segment[:, 0], segment[:, 1], 'm-', linewidth=2.5,
-                        alpha=0.8, zorder=5)
-                has_uwb_only = True
-            i = j
-
-        # Legende
-        legend_elements = [
-            Line2D([0], [0], color='darkgreen', linewidth=2.5,
-                   label=f'Fahrzeug ({vehicle_length}m × {vehicle_width}m)'),
-            Line2D([0], [0], marker='x', color='w', markerfacecolor='red',
-                   markersize=12, label='Origin (0,0)', linestyle='None')
-        ]
-        if has_lidar:
-            legend_elements.append(Line2D([0], [0], color='b', linewidth=2.5,
-                                          label='UWB + LiDAR'))
-        if has_uwb_only:
-            legend_elements.append(Line2D([0], [0], color='m', linewidth=2.5,
-                                          label='Nur UWB'))
-
-        ax.legend(handles=legend_elements, fontsize=11, loc='upper right',
-                  framealpha=0.9)
-
-        ax.set_xlabel("X [m] (Längsrichtung / Fahrtrichtung →)", fontsize=13,
-                      fontweight='bold')
-        ax.set_ylabel("Y [m] (Querrichtung)", fontsize=13, fontweight='bold')
-        ax.set_title("Ground Truth Trajektorie mit Fahrzeugkoordinatensystem",
-                     fontsize=15, fontweight='bold', pad=20)
-        ax.axis("equal")
-        ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
-
-        # Achsenlimits
-        x_min = min(gts[:, 0].min(), vehicle_x_rear - 1)
-        x_max = max(gts[:, 0].max(), vehicle_x_front + 1)
-        y_min = min(gts[:, 1].min(), vehicle_y_bottom - 1)
-        y_max = max(gts[:, 1].max(), vehicle_y_top + 1)
-
-        ax.set_xlim(x_min, x_max)
-        ax.set_ylim(y_min, y_max)
-
-        plt.tight_layout()
-        plt.show()
-
-        # Statistik
-        total_samples = len(driver_present_array)
-        lidar_samples = np.sum(driver_present_array == 1)
-        uwb_only_samples = np.sum(driver_present_array == 0)
-
-        print(f"\n{'=' * 55}")
-        print(f"📊 VALIDIERUNGSDATEN STATISTIK")
-        print(f"{'=' * 55}")
-        print(f"Gesamt Samples:    {total_samples:6d}")
-        print(f"UWB + LiDAR:       {lidar_samples:6d} ({100 * lidar_samples / total_samples:5.1f}%)")
-        print(f"Nur UWB:           {uwb_only_samples:6d} ({100 * uwb_only_samples / total_samples:5.1f}%)")
-        print(f"\n🚗 FAHRZEUGKOORDINATENSYSTEM:")
-        print(f"  Länge (x):       {vehicle_length:.2f} m (340.0 cm)")
-        print(f"  Breite (y):      {vehicle_width:.3f} m (112.5 cm)")
-        print(f"  Origin:          (0.0, 0.0) m")
-        print(f"  Heck (x_min):    {vehicle_x_rear:.2f} m")
-        print(f"  Front (x_max):   {vehicle_x_front:.2f} m")
-        print(f"  Links (y_min):   {vehicle_y_bottom:.3f} m")
-        print(f"  Rechts (y_max):  {vehicle_y_top:.3f} m")
-        print(f"{'=' * 55}\n")
-
-    def plot_validation_pattern_split_2(self):
-        gts = []
-        driver_present_array = []
-
-        for i in tqdm(range(self.num_samples)):
-            gt_point = self.position_data[i]
-            gts.append([gt_point[0], gt_point[1]])
-            driver_present_array.append(self.driver_present[i])
-
-        # Ergebnis als numpy arrays
-        gts = np.array(gts)
-        driver_present_array = np.array(driver_present_array)
-
-        plt.figure(figsize=(12, 10))
-
-        # === FAHRZEUG ZEICHNEN ===
-        # Fahrzeugabmessungen in Metern
-        vehicle_length = 3.40  # 340 cm
-        vehicle_width = 1.125  # 112.5 cm
-
-        # Origin liegt bei: x = -3.00m (40cm vor Fahrzeugheck), y = 0 (Mitte)
-        # Das bedeutet: Fahrzeugheck bei x=-3.00m, Fahrzeugfront bei x=0.40m
-        vehicle_x_rear = -3.00
-        vehicle_x_front = 0.40
-        vehicle_y_bottom = -vehicle_width / 2
-        vehicle_y_top = vehicle_width / 2
-
-        # Fahrzeug-Rechteck zeichnen
-        vehicle_rect = Rectangle(
-            (vehicle_x_rear, vehicle_y_bottom),
-            vehicle_length,
-            vehicle_width,
-            linewidth=2.5,
-            edgecolor='darkgreen',
-            facecolor='lightgreen',
-            alpha=0.3,
-            zorder=10,
-            label='Versuchsfahrzeug'
-        )
-        plt.gca().add_patch(vehicle_rect)
-
-        # Fahrtrichtungspfeil (Dreieck) - zeigt nach rechts (positive x-Richtung)
-        arrow_length = 0.8  # 80 cm
-        arrow_width = 0.4  # 40 cm
-        arrow_x_center = vehicle_x_front - 0.5  # Mittig vorne im Fahrzeug
-
-        triangle = Polygon(
-            [
-                [arrow_x_center - arrow_length / 2, 0],  # Hintere Spitze
-                [arrow_x_center + arrow_length / 2, arrow_width / 2],  # Obere Ecke
-                [arrow_x_center + arrow_length / 2, -arrow_width / 2]  # Untere Ecke
-            ],
-            closed=True,
-            linewidth=1.5,
-            edgecolor='darkgreen',
-            facecolor='green',
-            alpha=0.6,
-            zorder=11
-        )
-        plt.gca().add_patch(triangle)
-
-        # Origin-Markierung (x=0, y=0)
-        plt.scatter(0, 0, c='red', marker='x', s=200, linewidths=3,
-                    zorder=12, label='Origin (0,0)')
-
-        # === TRAJEKTORIE PLOTTEN ===
-        i = 0
-        has_lidar = False
-        has_uwb_only = False
-
-        while i < len(gts):
-            current_state = driver_present_array[i]
-
-            j = i
-            while j < len(gts) and driver_present_array[j] == current_state:
-                j += 1
-
-            segment = gts[i:j]
-            if current_state == 1:  # UWB + LiDAR
-                plt.plot(segment[:, 0], segment[:, 1], 'b-', linewidth=2, zorder=5)
-                has_lidar = True
-            else:  # Nur UWB
-                plt.plot(segment[:, 0], segment[:, 1], 'm-', linewidth=2, zorder=5)
-                has_uwb_only = True
-
-            i = j
-
-        # === LEGENDE ===
-        legend_elements = []
-        legend_elements.append(Line2D([0], [0], color='darkgreen', linewidth=2.5,
-                                      label='Versuchsfahrzeug (3.40m × 1.13m)'))
-        legend_elements.append(Line2D([0], [0], marker='x', color='w',
-                                      markerfacecolor='red', markersize=10,
-                                      label='Origin (0,0)', linestyle='None'))
-        if has_lidar:
-            legend_elements.append(Line2D([0], [0], color='b', linewidth=2,
-                                          label='UWB + LiDAR (Zielperson sichtbar)'))
-        if has_uwb_only:
-            legend_elements.append(Line2D([0], [0], color='m', linewidth=2,
-                                          label='Nur UWB (Zielperson nicht sichtbar)'))
-
-        plt.legend(handles=legend_elements, fontsize=10, loc='upper right')
-
-        # === ACHSEN & GRID ===
-        plt.xlabel("X [m] (Fahrtrichtung →)", fontsize=12)
-        plt.ylabel("Y [m] (Querrichtung)", fontsize=12)
-        plt.title("Ground Truth Trajektorie mit Fahrzeugposition", fontsize=14, fontweight='bold')
-        plt.axis("equal")
-        plt.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
-
-        # Achsen-Limits anpassen, damit Fahrzeug gut sichtbar ist
-        x_min, x_max = gts[:, 0].min(), gts[:, 0].max()
-        y_min, y_max = gts[:, 1].min(), gts[:, 1].max()
-
-        # Erweitere Limits um Fahrzeug
-        x_min = min(x_min, vehicle_x_rear - 0.5)
-        x_max = max(x_max, vehicle_x_front + 0.5)
-        y_min = min(y_min, vehicle_y_bottom - 0.5)
-        y_max = max(y_max, vehicle_y_top + 0.5)
-
-        plt.xlim(x_min, x_max)
-        plt.ylim(y_min, y_max)
-
-        plt.tight_layout()
-        plt.show()
-
-        # === STATISTIK ===
-        total_samples = len(driver_present_array)
-        lidar_samples = np.sum(driver_present_array == 1)
-        uwb_only_samples = np.sum(driver_present_array == 0)
-
-        print(f"\n{'=' * 50}")
-        print(f"📊 Validierungsdaten Statistik")
-        print(f"{'=' * 50}")
-        print(f"Gesamt Samples:  {total_samples:6d}")
-        print(f"UWB + LiDAR:     {lidar_samples:6d} ({100 * lidar_samples / total_samples:5.1f}%)")
-        print(f"Nur UWB:         {uwb_only_samples:6d} ({100 * uwb_only_samples / total_samples:5.1f}%)")
-        print(f"\n🚗 Fahrzeugposition:")
-        print(f"  Länge: {vehicle_length:.2f} m (340 cm)")
-        print(f"  Breite: {vehicle_width:.3f} m (112.5 cm)")
-        print(f"  Origin: (0.0, 0.0)")
-        print(f"  Heck: x = {vehicle_x_rear:.2f} m")
-        print(f"  Front: x = {vehicle_x_front:.2f} m")
-        print(f"{'=' * 50}\n")
-
-
 # ------------------ Ausführung ------------------
 if __name__ == "__main__":
 
     # folder for dataset location (train,val,test) -> test split is used for test and inference
     train_val_test_folder = "dataset/train_val_test/"
 
-    # path for test data -> cw or line check
+    # folder for test data -> cw or line check
     test_folder = "dataset/test/"
-    #test_path = test_folder + "dataset_val_cw.hdf5"
-    test_path = test_folder + "dataset_val_line.hdf5"
+
+    # path for test data -> cw or line check
+    test_path = test_folder + "dataset_val_cw.hdf5"
+    #test_path = test_folder + "dataset_val_line.hdf5"
 
 
     # model path
@@ -882,11 +694,10 @@ if __name__ == "__main__":
     # model_path="saved_models/adaptive_fused_model.keras"
 
 
-
-    model_path="saved_models/best_models/minimal_multimodal_model/minimal_multimodal_model.keras"
+    #model_path="saved_models/best_models/minimal_multimodal_model/minimal_multimodal_model.keras"
     #model_path="saved_models/best_models/kalman_multimodal_model/kalman_multimodal_model.keras"
     #model_path="saved_models/best_models/fused_kalman_multimodal_model/fused_kalman_multimodal_model.keras"
-    #model_path="saved_models/best_models/adaptive_fused_model/adaptive_fused_model.keras"
+    model_path="saved_models/best_models/adaptive_fused_model/adaptive_fused_model.keras"
 
 
     # create evaluator
@@ -904,14 +715,6 @@ if __name__ == "__main__":
     #evaluator.baseline_metrics_and_inference(dataset_folder=train_val_test_folder)
 
     # test model with test data -> cw or line
-
-    # plot ground truth
-    evaluator.plot_validation_pattern()
-    evaluator.plot_validation_pattern_split()
-    evaluator.plot_validation_pattern_split_2()
-    evaluator.plot_validation_pattern_split_detailed()
-
-    # run and test
-    #evaluator.run_inference()
-    #evaluator.plot_results()
-    #metrics = evaluator.compute_metrics()
+    evaluator.run_inference()
+    evaluator.plot_results()
+    metrics = evaluator.compute_metrics()
