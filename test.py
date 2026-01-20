@@ -700,7 +700,6 @@ if __name__ == "__main__":
 
 
     # model path
-
     #model_path="saved_models/best_models/minimal_multimodal_model/minimal_multimodal_model.keras"
     model_path="saved_models/best_models/kalman_multimodal_model/kalman_multimodal_model.keras"
     #model_path="saved_models/best_models/fused_kalman_multimodal_model/fused_kalman_multimodal_model.keras"
@@ -719,16 +718,16 @@ if __name__ == "__main__":
     )
 
     # test model with training dataset -> (samples: 5486)
-    #evaluator.baseline_metrics_and_inference(dataset_folder=train_val_test_folder)
+    evaluator.baseline_metrics_and_inference(dataset_folder=train_val_test_folder)
 
     # for inference use whole dataset (samples: 54865)
-    #evaluator.baseline_metrics_and_inference(dataset_folder=train_val_test_folder,
-    #                                         mode = 'test',
-     #                                        train_ratio = 0.0,
-     #                                        val_ratio = 0.0,
-      #                                       test_ratio = 1.0)
+    evaluator.baseline_metrics_and_inference(dataset_folder=train_val_test_folder,
+                                             mode = 'test',
+                                            train_ratio = 0.0,
+                                            val_ratio = 0.0,
+                                           test_ratio = 1.0)
 
     # test model with test data -> cw or line
     evaluator.run_inference()
     evaluator.plot_results()
-    #metrics = evaluator.compute_metrics()
+    metrics = evaluator.compute_metrics()
