@@ -61,29 +61,30 @@ Running model inference on 5491 samples...
 ============================================================
 ⏱️  INFERENCE TIMING STATISTICS
 ============================================================
-Total samples processed: 5491
-Total time: 108.48 s
+Total samples processed: 54865
+Total time: 2734.21 s
 
 --- Preprocessing (Grid Generation) ---
-  Mean:   15.38 ms
-  Median: 13.30 ms
-  Std:    4.67 ms
-  Min:    10.72 ms
-  Max:    84.75 ms
+  Mean:   23.80 ms
+  Median: 23.89 ms
+  Std:    1.01 ms
+  Min:    22.09 ms
+  Max:    44.48 ms
 
 --- Model Inference ---
-  Mean:   2.61 ms
-  Median: 2.27 ms
-  Std:    17.47 ms
-  Min:    1.87 ms
-  Max:    1294.91 ms
-  FPS:    383.4 Hz
+  Mean:   23.05 ms
+  Median: 22.54 ms
+  Std:    7.30 ms
+  Min:    19.23 ms
+  Max:    1669.46 ms
+  FPS:    43.4 Hz
 
 --- Total (Preprocessing + Inference) ---
-  Mean:   17.99 ms
-  Median: 15.68 ms
-  FPS:    55.6 Hz
+  Mean:   46.84 ms
+  Median: 46.43 ms
+  FPS:    21.3 Hz
 ============================================================
+
 
 ✅ Model inference complete: 5491 predictions
 

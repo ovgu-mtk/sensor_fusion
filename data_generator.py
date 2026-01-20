@@ -238,9 +238,9 @@ class DataGenerator:
         )
 
         # CRITICAL FIX: Add repeat() for training mode
-        if self.mode == 'train':
+        #if self.mode == 'train':
             # Repeat indefinitely for training
-            dataset = dataset.repeat()
+         #   dataset = dataset.repeat()
 
         dataset = dataset.batch(self.batch_size, drop_remainder=False)
         dataset = dataset.prefetch(tf.data.AUTOTUNE)
@@ -270,22 +270,22 @@ class DataGenerator:
                 with h5py.File(path, 'r') as f:
                     n_total = len(f['ground_truth'])
 
-                    # Bestimme den richtigen Split
+                    # compute split
                     split_idx = int(n_total * (self.train_ratio+self.val_ratio))
                     start, end = split_idx, n_total
 
-                    # Lade Daten für diesen Split
+                    # load data for split
                     gt = f['ground_truth'][start:end]
                     driver_present = f['driver_present'][start:end]
                     uwb_raw = f['uwb_data'][start:end]
 
-                    # Prüfe ob gefiltertes UWB vorhanden ist
+                    # check if filtered uwb is available
                     if 'uwb_data_filtered' in f:
                         uwb_filtered = f['uwb_data_filtered'][start:end]
                     else:
                         uwb_filtered = uwb_raw.copy()
 
-                    # Lade LiDAR Daten (für Model Inference)
+                    # load lidar data for inference
                     lidar_data = [f['lidar_data'][i] for i in range(start, end)]
 
                     all_gt.append(gt)
@@ -427,7 +427,7 @@ class DataGenerator:
             }
         }
 
-        # Ausgabe der Timing-Statistiken
+        # Outputs
         print(f"\n{'=' * 60}")
         print(f"⏱️  INFERENCE TIMING STATISTICS")
         print(f"{'=' * 60}")
@@ -723,15 +723,19 @@ class DataGenerator:
             if len(points) > 0:
                 ax[0].scatter(points[:, 0], points[:, 1], c=points[:, 2], s=1)
             ax[0].scatter(gt[0], gt[1], c='r', marker='x', s=100, label='GT')
-            ax[0].set_title("Raw LiDAR + Ground Truth(GT)")
+            #ax[0].set_title("Raw LiDAR + Ground Truth(GT)")
             ax[0].legend()
             ax[0].set_ylim(7, -7)
             ax[0].set_xlim(-1, 15)
             ax[0].set_aspect('equal', adjustable='box')
+            ax[0].grid(color='grey', linestyle='--', linewidth=0.5, alpha=0.3)
 
             im = ax[1].imshow(grid[:, :, 0], cmap='hot', origin='lower', aspect='auto')
-            ax[1].set_title("Height Grid")
-            plt.colorbar(im, ax=ax[1], label='Height [m]')
+            #ax[1].set_title("Height Grid")
+            cbar= plt.colorbar(im, ax=ax[1], label='Height [m]')
+            cbar.ax.tick_params(labelsize=12)  # Tick-Labels
+            cbar.set_label('Height [m]', size=14)  # Colorbar-Label
+            #plt.colorbar(im, ax=ax[1])
 
             plt.tight_layout()
             plt.show()
@@ -833,7 +837,7 @@ if __name__ == "__main__":
     import model as model_factory
 
     model = tf.keras.models.load_model(
-        "saved_models/minimal_multimodal_model.keras",
+        "saved_models/best_models/minimal_multimodal_model/minimal_multimodal_model.keras",
         custom_objects={
             "TemporalAttention": model_factory.TemporalAttention,
             "ResidualDKF": model_factory.ResidualDKF,

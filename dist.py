@@ -82,8 +82,8 @@ def create_comprehensive_heatmaps(hdf5_folder, grid_resolution=0.1, bin_multipli
                      cmap='inferno',
                      aspect='equal')
     plt.colorbar(im1, ax=ax1, label='Häufigkeit', fraction=0.046, pad=0.04)
-    ax1.set_xlabel('X Position (m)')
-    ax1.set_ylabel('Y Position (m)')
+    #ax1.set_xlabel('X Position (m)')
+    #ax1.set_ylabel('Y Position (m)')
     ax1.set_title('Heatmap')
     ax1.set_xlim(x_min_r, x_max_r)
     ax1.set_ylim(y_min_r, y_max_r)
@@ -99,8 +99,8 @@ def create_comprehensive_heatmaps(hdf5_folder, grid_resolution=0.1, bin_multipli
                      cmap='viridis',
                      aspect='equal')
     plt.colorbar(im2, ax=ax2, label='Log(Häufigkeit + 1)', fraction=0.046, pad=0.04, shrink=0.5)
-    ax2.set_xlabel('X Position (m)')
-    ax2.set_ylabel('Y Position (m)')
+    #ax2.set_xlabel('X Position (m)')
+    #ax2.set_ylabel('Y Position (m)')
     #ax2.set_title('Heatmap (Logarithmisch)')
     ax2.set_xlim(x_min_r, x_max_r)
     ax2.set_ylim(y_min_r, y_max_r)
@@ -114,8 +114,8 @@ def create_comprehensive_heatmaps(hdf5_folder, grid_resolution=0.1, bin_multipli
     hb = ax3.hexbin(all_positions[:, 0], all_positions[:, 1],
                     gridsize=hexbin_gridsize, cmap='hot', mincnt=1)
     plt.colorbar(hb, ax=ax3, label='Anzahl')
-    ax3.set_xlabel('X Position (m)')
-    ax3.set_ylabel('Y Position (m)')
+    #ax3.set_xlabel('X Position (m)')
+    #ax3.set_ylabel('Y Position (m)')
     ax3.set_title('Hexbin Plot')
     ax3.set_xlim(x_min_r, x_max_r)
     ax3.set_ylim(y_min_r, y_max_r)
@@ -132,8 +132,8 @@ def create_comprehensive_heatmaps(hdf5_folder, grid_resolution=0.1, bin_multipli
     ax4.contour(X, Y, smoothed, levels=levels, colors='white',
                 linewidths=0.5, alpha=0.4)
     plt.colorbar(cf, ax=ax4, label='Geglättete Dichte')
-    ax4.set_xlabel('X Position (m)')
-    ax4.set_ylabel('Y Position (m)')
+    #ax4.set_xlabel('X Position (m)')
+    #ax4.set_ylabel('Y Position (m)')
     ax4.set_title('Konturplot (Gaussian Smoothing)')
     ax4.set_xlim(x_min_r, x_max_r)
     ax4.set_ylim(y_min_r, y_max_r)
@@ -168,8 +168,8 @@ def create_comprehensive_heatmaps(hdf5_folder, grid_resolution=0.1, bin_multipli
                  ha='center', va='center', transform=ax5.transAxes)
         ax5.set_title('5. KDE Plot (Fehler)')
 
-    ax5.set_xlabel('X Position (m)')
-    ax5.set_ylabel('Y Position (m)')
+    #ax5.set_xlabel('X Position (m)')
+    #ax5.set_ylabel('Y Position (m)')
     ax5.set_xlim(x_min_r, x_max_r)
     ax5.set_ylim(y_min_r, y_max_r)
     ax5.set_aspect('equal')
@@ -186,8 +186,8 @@ def create_comprehensive_heatmaps(hdf5_folder, grid_resolution=0.1, bin_multipli
 
     ax6.scatter(scatter_sample[:, 0], scatter_sample[:, 1],
                 alpha=0.05, s=1, c='navy', rasterized=True)
-    ax6.set_xlabel('X Position (m)')
-    ax6.set_ylabel('Y Position (m)')
+    #ax6.set_xlabel('X Position (m)')
+    #ax6.set_ylabel('Y Position (m)')
     #ax6.set_title('Streudiagramm') # scatter plot
     ax6.set_xlim(x_min_r, x_max_r)
     ax6.set_ylim(y_min_r, y_max_r)
@@ -217,9 +217,9 @@ def create_comprehensive_heatmaps(hdf5_folder, grid_resolution=0.1, bin_multipli
                      origin='lower',
                      cmap='viridis',
                      aspect='equal')
-    plt.colorbar(im1, ax=ax1, label='Log(Häufigkeit + 1)', fraction=0.046, pad=0.04)
-    ax1.set_xlabel('X Position (m)')
-    ax1.set_ylabel('Y Position (m)')
+    plt.colorbar(im1, ax=ax1, label='Log sample density', fraction=0.046, pad=0.04)
+    #ax1.set_xlabel('X Position (m)')
+    #ax1.set_ylabel('Y Position (m)')
     ax1.set_xlim(x_min_r, x_max_r)
     ax1.set_ylim(y_min_r, y_max_r)
     ax1.grid(color='grey', linestyle='--', linewidth=0.5, alpha=0.3)
@@ -227,8 +227,8 @@ def create_comprehensive_heatmaps(hdf5_folder, grid_resolution=0.1, bin_multipli
     # Plot 2: Scatter Plot
     ax2.scatter(scatter_sample[:, 0], scatter_sample[:, 1],
                 alpha=0.05, s=1, c='navy', rasterized=True, edgecolors='none')
-    ax2.set_xlabel('X Position (m)')
-    ax2.set_ylabel('Y Position (m)')
+    #ax2.set_xlabel('X Position (m)')
+    #ax2.set_ylabel('Y Position (m)')
     ax2.set_xlim(x_min_r, x_max_r)
     ax2.set_ylim(y_min_r, y_max_r)
     ax2.set_aspect('equal')

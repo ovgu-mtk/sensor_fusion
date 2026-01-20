@@ -1,39 +1,82 @@
 import os
+import argparse
 import tensorflow as tf
 import data_generator as dataloader
 import model as model_factory
 import test as tester
 
+def str_to_bool(value):
+    """Converts 1/0 or true/false strings to actual boolean."""
+    if isinstance(value, bool):
+        return value
+    if str(value).lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif str(value).lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
+    else:
+        raise argparse.ArgumentTypeError('Boolean value (1/0 or true/false) expected.')
 
-# set cuda device 0-3
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
-#os.environ["CUDA_VISIBLE_DEVICES"] = "0"
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train semantic segmentation model.")
+    parser.add_argument('--gpu', type=int, choices=range(0, 10), default=0, help='GPU index to use (0-9), faalback to gpu 0. Default: 0')
+    parser.add_argument('--model', type=int, choices=range(0, 4), default=0, help='Model index. '
+                                                                                  '0-Minimal, '
+                                                                                  '1-Kalman, '
+                                                                                  '2-Fused-Kalman'
+                                                                                  '3-Adaptive-Kalman. Default: 0')
+    parser.add_argument('--ds_folder', default="dataset/train_val_test/",
+                        help='Dataset location, default: "dataset/train_val_test/"')
+    parser.add_argument('--grid_resolution', type=float, default=0.1, help='Grid resolution. Default: 0.1')
+    parser.add_argument('--seq_length', type=int, default=10, help='Length of past sequence. Default: 10')
+    parser.add_argument('--grid_size', type=int, default=500, help='Grid size for height map. Default: 500')
+    parser.add_argument('--prediction_horizon', type=int, default=1, help='The number of future time steps the model predicts into the future . Default: 1')
+    parser.add_argument('--augment_uwb', type=str_to_bool, default=True,
+                        help='Set augmentation of UWB signal true(1)/false(0). Default: 1')
+    parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs. Default: 100')
+    parser.add_argument('--batch_size', type=int, default=40, help='Batch size. Default: 40')
+    return parser.parse_args()
 
-gpus = tf.config.experimental.list_physical_devices('GPU')
-print(gpus)
-if gpus:
-    try:
-        tf.config.experimental.set_visible_devices(gpus[0], 'GPU')  # Force TensorFlow to use GPU 1
-        tf.config.experimental.set_memory_growth(gpus[0], True)
-    except RuntimeError as e:
-        print(e)
+def set_gpu(gpu_index):
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
+        try:
+            tf.config.experimental.set_visible_devices(gpus[gpu_index], 'GPU')
+            tf.config.experimental.set_memory_growth(gpus[gpu_index], True)
+        except Exception as e:
+            print(f"Failed to use GPU {gpu_index}, falling back to GPU 0. Error: {e}")
+            tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
+            tf.config.experimental.set_memory_growth(gpus[0], True)
 
 
 
 if __name__ == "__main__":
+    args = parse_args()
+
+    print(f"tensorflow version: {tf.__version__}")
+
+    # Set GPU
+    set_gpu(args.gpu)
+
+    # ========================================
+    # DATASET CONFIGURATION
+    # ========================================
+    dataset_folder = args.ds_folder
+    grid_resolution = args.grid_resolution
+    seq_length = args.seq_length
+    grid_size = args.grid_size
+    prediction_horizon = args.prediction_horizon
+    augment_uwb = args.augment_uwb
+    batch_size = args.batch_size
+    epochs = args.epochs
 
     # print tf version and dataset size
     print(f"tensorflow verion: {tf.__version__}")
 
-    # Path to dataset
-    dataset_folder = "dataset/train_val_test/"
-    grid_resolution = 0.1
-    seq_length = 10
-    grid_size = 500
-    batch_size = 40
-    epochs = 100
-    #use_velocity_auxiliary = True
-    use_velocity_auxiliary = False
+    # velocity for model aoutput
+    use_velocity_auxiliary = True
+    if args.model == 0:
+        use_velocity_auxiliary = False
 
 
     # Prediction horizon (wichtig für Velocity-Modell!)
@@ -60,7 +103,7 @@ if __name__ == "__main__":
         grid_resolution=grid_resolution,
         seq_length=seq_length,
         batch_size=batch_size,
-        mode='test',
+        mode='val',
         train_ratio=0.8,
         val_ratio=0.1,
         test_ratio=0.1,
@@ -77,14 +120,17 @@ if __name__ == "__main__":
     model_name = "model_v1"
     save_model_path = "saved_models/" + str(model_name) + ".keras"
 
-    # set use_velocity_auxiliary to false
-    model = model_factory.create_minimal_multimodal_model(grid_size=grid_size,num_layers=train_gen.num_channels,sequence_length=seq_length, gru_units=64)
-
-    # set use_velocity_auxiliary to true
-    #model = model_factory.create_kalman_multimodal_model(grid_size=grid_size,num_layers=train_gen.num_channels,sequence_length=seq_length,latent_dim=64,use_velocity_auxiliary=use_velocity_auxiliary,gru_units=96)
-    #model = model_factory.create_fused_kalman_multimodal_model(grid_size=grid_size,num_layers=train_gen.num_channels,sequence_length=seq_length,latent_dim=64,use_velocity_auxiliary=use_velocity_auxiliary,gru_units=96)
-    #model = model_factory.create_adaptive_fused_model(grid_size=grid_size,num_layers=train_gen.num_channels,sequence_length=seq_length,latent_dim=64,use_velocity_auxiliary=use_velocity_auxiliary,gru_units=96)
-
+    # create model from args
+    if args.model == 0:
+        model = model_factory.create_minimal_multimodal_model(grid_size=grid_size,num_layers=train_gen.num_channels,sequence_length=seq_length, gru_units=64)
+    elif args.model == 1:
+        model = model_factory.create_kalman_multimodal_model(grid_size=grid_size,num_layers=train_gen.num_channels,sequence_length=seq_length,latent_dim=64,use_velocity_auxiliary=use_velocity_auxiliary,gru_units=96)
+    elif args.model == 2:
+        model = model_factory.create_fused_kalman_multimodal_model(grid_size=grid_size,num_layers=train_gen.num_channels,sequence_length=seq_length,latent_dim=64,use_velocity_auxiliary=use_velocity_auxiliary,gru_units=96)
+    elif args.model == 3:
+        model = model_factory.create_adaptive_fused_model(grid_size=grid_size,num_layers=train_gen.num_channels,sequence_length=seq_length,latent_dim=64,use_velocity_auxiliary=use_velocity_auxiliary,gru_units=96)
+    else:
+        print("wrong index: 0-Minimal, 1-Kalman, 2-Fused-Kalman, 3-Adaptive-Kalman")
 
 
     # Modell kompilieren
@@ -137,10 +183,13 @@ if __name__ == "__main__":
     print(f"Monitor Metric: {monitor_metric}")
     print("=" * 50 + "\n")
 
+
     history = model.fit(
         train_dataset,
+        steps_per_epoch=len(train_gen),
         epochs=epochs,
         validation_data=val_dataset,
+        validation_steps=len(val_gen),
         callbacks=callbacks,
         verbose=1
     )

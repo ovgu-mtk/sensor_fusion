@@ -8,15 +8,13 @@ from collections import deque
 import os
 from tqdm import tqdm
 import data_generator as dataloader
-
-# ==== Projektimports (anpassen falls Pfade anders) ====
 import model as model_factory
 
-# Externe Abhängigkeit: filterpy für den Unscented Kalman Filter
+# filterpy for Unscented Kalman Filter
 try:
     from filterpy.kalman import UnscentedKalmanFilter, MerweScaledSigmaPoints
 except Exception as e:
-    raise ImportError("Benötigt 'filterpy' (pip install filterpy). Fehler: {}".format(e))
+    raise ImportError("Needs 'filterpy' (pip install filterpy). Error: {}".format(e))
 
 # fasten inference speed
 @tf.function
@@ -24,9 +22,9 @@ def infer(model, X_input):
     return model(X_input, training=False)
 
 
-# ------------------ Konstant-beschleunigtes UKF-Modell ------------------
-# Zustand: x = [px, py, vx, vy, ax, ay]
-# Messung: z = [px, py]
+# ------------------ constant-acc UKF-Modell ------------------
+# x = [px, py, vx, vy, ax, ay]
+# z = [px, py]
 
 def fx_ca(x, dt):
     """State transition for constant acceleration model."""
@@ -120,31 +118,25 @@ class OfflineModelEvaluator:
         self.grid_resolution = grid_resolution
         self.seq_length = seq_length
         self.vel_output = vel_output
-
-        # Höhen- / Bodenschwellen
         self.min_height = -1.0
         self.max_height = 3.0
         self.ground_height_threshold = 0.2
-
-        # UKF für UWB (konstant-beschleunigt)
         self.ukf = UWBUnscentedFilterCA(dt=ukf_dt)
 
-        # Daten & Modell laden
         self._load_hdf5()
         self._load_model()
 
     # ----------------------------------------------------
-    #  Daten laden
+    #  Load data
     # ----------------------------------------------------
     def _load_hdf5(self):
         if not os.path.exists(self.test_path):
-            raise FileNotFoundError(f"HDF5-Datei nicht gefunden: {self.test_path}")
+            raise FileNotFoundError(f"HDF5-not found: {self.test_path}")
         self.hdf5 = h5py.File(self.test_path, 'r')
         self.lidar_data = self.hdf5['lidar_data']
         self.uwb_data = self.hdf5['uwb_data']
         self.driver_present = self.hdf5['driver_present']
 
-        # falls gefiltertes uwb schon im hdf5 vorhanden ist
         self.uwb_data_filtered = self.hdf5.get('uwb_data_filtered', self.uwb_data)
         self.position_data = self.hdf5['ground_truth']
 
@@ -179,12 +171,12 @@ class OfflineModelEvaluator:
         if len(lidar_points) == 0:
             return np.zeros((self.grid_size, self.grid_size, 1), dtype=np.float32)
 
-        # Berechne Grenzen (wie DataGenerator)
+        # compute borders
         half_size = (self.grid_size * self.grid_resolution) / 2
         range_x = [-half_size, half_size]
         range_y = [-half_size, half_size]
 
-        # Filtere gültige Punkte
+        # filter points
         mask = (lidar_points[:, 0] >= range_x[0]) & (lidar_points[:, 0] < range_x[1]) & \
                (lidar_points[:, 1] >= range_y[0]) & (lidar_points[:, 1] < range_y[1])
         valid_pts = lidar_points[mask]
@@ -192,7 +184,7 @@ class OfflineModelEvaluator:
         if len(valid_pts) == 0:
             return np.zeros((self.grid_size, self.grid_size, 1), dtype=np.float32)
 
-        # Berechne Indizes (EXAKT wie DataGenerator)
+        # compute indices
         x_idx = ((valid_pts[:, 0] - range_x[0]) / self.grid_resolution).astype(np.int32)
         y_idx = ((valid_pts[:, 1] - range_y[0]) / self.grid_resolution).astype(np.int32)
 
@@ -200,14 +192,14 @@ class OfflineModelEvaluator:
         y_idx = np.clip(y_idx, 0, self.grid_size - 1)
         z_vals = valid_pts[:, 2]
 
-        # Flatten Index (WICHTIG: y * width + x wie im DataGenerator!)
+        # Flatten Index
         flat_idx = y_idx * self.grid_size + x_idx
 
-        # Height Map mit Maximum-Aggregation
+        # Height Map
         height_flat = np.full(self.grid_size * self.grid_size, self.min_height, dtype=np.float32)
         np.maximum.at(height_flat, flat_idx, z_vals)
 
-        # Normalisierung
+        # norm
         height_norm = np.clip(
             (height_flat - self.min_height) / (self.max_height - self.min_height),
             0, 1
@@ -217,7 +209,7 @@ class OfflineModelEvaluator:
         occupied = np.zeros_like(height_flat, dtype=bool)
         occupied[flat_idx] = True
 
-        # Reshape und unoccupied auf 0 setzen
+        # Reshape and set unoccupied to 0
         final_h = height_norm.reshape(self.grid_size, self.grid_size)
         final_h[~occupied.reshape(self.grid_size, self.grid_size)] = 0
 
@@ -225,7 +217,7 @@ class OfflineModelEvaluator:
 
 
     # ----------------------------------------------------
-    #  Inferenz
+    #  Inference
     # ----------------------------------------------------
     def run_inference(self):
         preds = []
@@ -238,7 +230,7 @@ class OfflineModelEvaluator:
         lidar_buffer = deque(maxlen=self.seq_length)
         uwb_buffer = deque(maxlen=self.seq_length)
 
-        # Reset UKF zwischen Läufen
+        # Reset UKF
         self.ukf.reset()
 
         print("Running model inference...")
@@ -252,7 +244,6 @@ class OfflineModelEvaluator:
             uwb_buffer.append(uwb_point)
 
             if len(lidar_buffer) < self.seq_length:
-                # noch nicht genug für eine Sequenz
                 continue
 
             # Grid sequence
@@ -264,7 +255,7 @@ class OfflineModelEvaluator:
 
             input_dict = {'grid_input': grid_input, 'uwb_input': uwb_input}
 
-            # Modell-Inferenz
+            # Modell-Inference
             pred = infer(self.model, input_dict)
 
             # check if model predicts velocity and position or position only
@@ -288,7 +279,7 @@ class OfflineModelEvaluator:
             uwb_ukf_pos = self.ukf.update([uwb_point[0], uwb_point[1]])
             uwbs_ukf.append([uwb_ukf_pos[0], uwb_ukf_pos[1]])
 
-        # Ergebnisse als numpy arrays
+        # Outputs as numpy arrays
         self.preds = np.array(preds)
         self.uwbs = np.array(uwbs)
         self.uwbs_filtered = np.array(uwbs_filterd)
@@ -300,7 +291,7 @@ class OfflineModelEvaluator:
 
         print("✅ Inference complete")
 
-    def baseline_metrics_and_inference(self, dataset_folder):
+    def baseline_metrics_and_inference(self, dataset_folder, mode='test', train_ratio=0.8, val_ratio=0.1, test_ratio=0.1):
         # Validation Generator
         test_gen = dataloader.DataGenerator(
             hdf5_folder=dataset_folder,
@@ -308,10 +299,10 @@ class OfflineModelEvaluator:
             grid_resolution=self.grid_resolution,
             seq_length=self.seq_length,
             batch_size=1,
-            mode='test',
-            train_ratio=0.8,
-            val_ratio=0.1,
-            test_ratio=0.1,
+            mode=mode,
+            train_ratio=train_ratio,
+            val_ratio=val_ratio,
+            test_ratio=test_ratio,
             use_velocity_auxiliary=True
         )
         print("\n=== Metrics with Model Predictions ===")
@@ -424,12 +415,16 @@ class OfflineModelEvaluator:
         if has_uwb_gt:
             legend_elements.append(Line2D([0], [0], color='m', linewidth=2, label='Ground Truth (UWB only)'))
 
-        ax.legend(handles=legend_elements, fontsize=10, loc='upper right')
-        ax.set_xlabel("X [m]", fontsize=12)
-        ax.set_ylabel("Y [m]", fontsize=12)
-        ax.set_title("Ground Truth", fontsize=14)
+        #ax.legend(handles=legend_elements, fontsize=10, loc='upper right')
+        #ax.set_xlabel("X [m]", fontsize=12)
+        #ax.set_ylabel("Y [m]", fontsize=12)
+        #ax.set_title("Ground Truth", fontsize=14)
         ax.axis("equal")
         ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+
+        # Remove tick labels to hide units
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
 
         # Adjust limits
         x_min = min(self.gts[:, 0].min(), self.preds[:, 0].min(), veh_x_rear - 0.5)
@@ -438,9 +433,9 @@ class OfflineModelEvaluator:
         y_max = max(self.gts[:, 1].max(), self.preds[:, 1].max(), veh_y_top + 0.5)
         ax.set_xlim(x_min, x_max)
         ax.set_ylim(y_min, y_max)
+        #ax.tick_params(axis='both', which='major', labelsize=20)  # size of units
         plt.tight_layout()
         plt.show()
-
 
         # === Plot 1: Ground Truth vs Prediction ===
         fig, ax = plt.subplots(figsize=(12, 10))
@@ -464,12 +459,16 @@ class OfflineModelEvaluator:
         if has_uwb_gt:
             legend_elements.append(Line2D([0], [0], color='m', linewidth=2, label='Ground Truth (UWB only)'))
 
-        ax.legend(handles=legend_elements, fontsize=10, loc='upper right')
-        ax.set_xlabel("X [m]", fontsize=12)
-        ax.set_ylabel("Y [m]", fontsize=12)
-        ax.set_title("Ground Truth vs. Model Prediction", fontsize=14)
+        #ax.legend(handles=legend_elements, fontsize=10, loc='upper right')
+        #ax.set_xlabel("X [m]", fontsize=12)
+        #ax.set_ylabel("Y [m]", fontsize=12)
+        #ax.set_title("Ground Truth vs. Model Prediction", fontsize=14)
         ax.axis("equal")
         ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+
+        # Remove tick labels to hide units
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
 
         # Adjust limits
         x_min = min(self.gts[:, 0].min(), self.preds[:, 0].min(), veh_x_rear - 0.5)
@@ -496,12 +495,16 @@ class OfflineModelEvaluator:
         if has_uwb_gt:
             legend_elements.append(Line2D([0], [0], color='m', linewidth=2, label='Ground Truth (UWB only)'))
 
-        ax.legend(handles=legend_elements, fontsize=10, loc='upper right')
-        ax.set_xlabel("X [m]", fontsize=12)
-        ax.set_ylabel("Y [m]", fontsize=12)
-        ax.set_title("Ground Truth vs. UWB Raw", fontsize=14)
+        #ax.legend(handles=legend_elements, fontsize=10, loc='upper right')
+        #ax.set_xlabel("X [m]", fontsize=12)
+        #ax.set_ylabel("Y [m]", fontsize=12)
+        #ax.set_title("Ground Truth vs. UWB Raw", fontsize=14)
         ax.axis("equal")
         ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+
+        # Remove tick labels to hide units
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
 
         x_min = min(self.gts[:, 0].min(), self.uwbs[:, 0].min(), veh_x_rear - 0.5)
         x_max = max(self.gts[:, 0].max(), self.uwbs[:, 0].max(), veh_x_front + 0.5)
@@ -528,12 +531,16 @@ class OfflineModelEvaluator:
         if has_uwb_gt:
             legend_elements.append(Line2D([0], [0], color='m', linewidth=2, label='Ground Truth (UWB only)'))
 
-        ax.legend(handles=legend_elements, fontsize=10, loc='upper right')
-        ax.set_xlabel("X [m]", fontsize=12)
-        ax.set_ylabel("Y [m]", fontsize=12)
-        ax.set_title("Ground Truth vs. UWB Filtered (EKF)", fontsize=14)
+        #ax.legend(handles=legend_elements, fontsize=10, loc='upper right')
+        #ax.set_xlabel("X [m]", fontsize=12)
+        #ax.set_ylabel("Y [m]", fontsize=12)
+        #ax.set_title("Ground Truth vs. UWB Filtered (EKF)", fontsize=14)
         ax.axis("equal")
         ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+
+        # Remove tick labels to hide units
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
 
         x_min = min(self.gts[:, 0].min(), self.uwbs_filtered[:, 0].min(), veh_x_rear - 0.5)
         x_max = max(self.gts[:, 0].max(), self.uwbs_filtered[:, 0].max(), veh_x_front + 0.5)
@@ -559,12 +566,16 @@ class OfflineModelEvaluator:
         if has_uwb_gt:
             legend_elements.append(Line2D([0], [0], color='m', linewidth=2, label='Ground Truth (UWB only)'))
 
-        ax.legend(handles=legend_elements, fontsize=10, loc='upper right')
-        ax.set_xlabel("X [m]", fontsize=12)
-        ax.set_ylabel("Y [m]", fontsize=12)
-        ax.set_title("Ground Truth vs. UWB Filtered (UKF - const accel)", fontsize=14)
+        #ax.legend(handles=legend_elements, fontsize=10, loc='upper right')
+        #ax.set_xlabel("X [m]", fontsize=12)
+        #ax.set_ylabel("Y [m]", fontsize=12)
+        #ax.set_title("Ground Truth vs. UWB Filtered (UKF - const accel)", fontsize=14)
         ax.axis("equal")
         ax.grid(True, alpha=0.3, linestyle='--', linewidth=0.5)
+
+        # Remove tick labels to hide units
+        ax.set_xticklabels([])
+        ax.set_yticklabels([])
 
         x_min = min(self.gts[:, 0].min(), self.uwbs_ukf[:, 0].min(), veh_x_rear - 0.5)
         x_max = max(self.gts[:, 0].max(), self.uwbs_ukf[:, 0].max(), veh_x_front + 0.5)
@@ -626,7 +637,7 @@ class OfflineModelEvaluator:
 
 
     # ----------------------------------------------------
-    #  Metriken berechnen
+    #  compute metrics
     # ----------------------------------------------------
 
     def compute_metrics(self):
@@ -673,8 +684,9 @@ class OfflineModelEvaluator:
 
         return results
 
-# ------------------ Ausführung ------------------
+
 if __name__ == "__main__":
+    print("TF:", tf.__version__)
 
     # folder for dataset location (train,val,test) -> test split is used for test and inference
     train_val_test_folder = "dataset/train_val_test/"
@@ -688,16 +700,11 @@ if __name__ == "__main__":
 
 
     # model path
-    # model_path = "saved_models/minimal_multimodal_model.keras"
-    # model_path= "saved_models/kalman_multimodal_model.keras"
-    # model_path= "saved_models/best_models/fused_kalman_multimodal_model/fused_kalman_multimodal_model.keras"
-    # model_path="saved_models/adaptive_fused_model.keras"
-
 
     #model_path="saved_models/best_models/minimal_multimodal_model/minimal_multimodal_model.keras"
-    #model_path="saved_models/best_models/kalman_multimodal_model/kalman_multimodal_model.keras"
+    model_path="saved_models/best_models/kalman_multimodal_model/kalman_multimodal_model.keras"
     #model_path="saved_models/best_models/fused_kalman_multimodal_model/fused_kalman_multimodal_model.keras"
-    model_path="saved_models/best_models/adaptive_fused_model/adaptive_fused_model.keras"
+    #model_path="saved_models/best_models/adaptive_fused_model/adaptive_fused_model.keras"
 
 
     # create evaluator
@@ -711,10 +718,17 @@ if __name__ == "__main__":
         ukf_dt=0.08  # 12,5 Hz -> 0.08
     )
 
-    # test model with training dataset
+    # test model with training dataset -> (samples: 5486)
     #evaluator.baseline_metrics_and_inference(dataset_folder=train_val_test_folder)
+
+    # for inference use whole dataset (samples: 54865)
+    #evaluator.baseline_metrics_and_inference(dataset_folder=train_val_test_folder,
+    #                                         mode = 'test',
+     #                                        train_ratio = 0.0,
+     #                                        val_ratio = 0.0,
+      #                                       test_ratio = 1.0)
 
     # test model with test data -> cw or line
     evaluator.run_inference()
     evaluator.plot_results()
-    metrics = evaluator.compute_metrics()
+    #metrics = evaluator.compute_metrics()
