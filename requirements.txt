@@ -1,0 +1,11 @@
+os
+tensorflow==2.15.0
+matplotlib
+numpy
+scikit-learn
+tqdm
+h5py
+argparse
+shutil
+zipfile
+requests

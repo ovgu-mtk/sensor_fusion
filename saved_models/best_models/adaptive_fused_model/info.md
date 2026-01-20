@@ -56,31 +56,32 @@ Running model inference on 5491 samples...
 ============================================================
 ⏱️  INFERENCE TIMING STATISTICS
 ============================================================
-Total samples processed: 5491
-Total time: 139.74 s
+Total samples processed: 54865
+Total time: 2836.55 s
 
 --- Preprocessing (Grid Generation) ---
-  Mean:   20.15 ms
-  Median: 17.77 ms
-  Std:    7.07 ms
-  Min:    13.12 ms
-  Max:    80.35 ms
+  Mean:   24.45 ms
+  Median: 24.22 ms
+  Std:    1.21 ms
+  Min:    22.24 ms
+  Max:    35.60 ms
 
 --- Model Inference ---
-  Mean:   3.38 ms
-  Median: 2.74 ms
-  Std:    17.21 ms
-  Min:    2.14 ms
-  Max:    1273.94 ms
-  FPS:    295.7 Hz
+  Mean:   24.18 ms
+  Median: 23.36 ms
+  Std:    7.82 ms
+  Min:    18.84 ms
+  Max:    1771.34 ms
+  FPS:    41.3 Hz
 
 --- Total (Preprocessing + Inference) ---
-  Mean:   23.53 ms
-  Median: 20.42 ms
-  FPS:    42.5 Hz
+  Mean:   48.64 ms
+  Median: 48.02 ms
+  FPS:    20.6 Hz
 ============================================================
 
-✅ Model inference complete: 5491 predictions
+✅ Model inference complete: 54865 predictions
+
 
 ========== Validation Metrics ==========
 
@@ -121,7 +122,7 @@ Mean [m]: 0.4554
 RMSE [m]: 0.5440
 Median [m]: 0.4029
 P90 [m]: 0.8063
-Max [m]: 4.0598
+Max [m]:   
 Count: 4254
 
 --- Model Prediction UWB only ---

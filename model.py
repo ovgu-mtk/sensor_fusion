@@ -3,6 +3,10 @@ from tensorflow import keras
 from tensorflow.keras import layers
 
 
+# ========================================
+# Custom layer
+# ========================================
+
 
 class TemporalAttention(layers.Layer):
     """
@@ -236,7 +240,7 @@ class AdaptiveSensorFusionDKF(layers.Layer):
         return config
 
 # ========================================
-# Modelle
+# Models
 # ========================================
 
 

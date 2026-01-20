@@ -1,27 +1,52 @@
 import os
+import argparse
 import tensorflow as tf
 import data_generator as dataloader
 import model as model_factory
 import test as tester
 
-# set cuda device 0-3 -> fallback gpu0
-os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"  # see issue #152
-#os.environ["CUDA_VISIBLE_DEVICES"] = "0"
-gpus = tf.config.experimental.list_physical_devices('GPU')
-print(gpus)
-if gpus:
-    if len(gpus) == 1:
-        try:
-            tf.config.experimental.set_visible_devices(gpus[0], 'GPU')  # Force TensorFlow to use GPU 1
-            tf.config.experimental.set_memory_growth(gpus[0], True)
-        except RuntimeError as e:
-            print(e)
+
+def str_to_bool(value):
+    """Converts 1/0 or true/false strings to actual boolean."""
+    if isinstance(value, bool):
+        return value
+    if str(value).lower() in ('yes', 'true', 't', 'y', '1'):
+        return True
+    elif str(value).lower() in ('no', 'false', 'f', 'n', '0'):
+        return False
     else:
+        raise argparse.ArgumentTypeError('Boolean value (1/0 or true/false) expected.')
+
+
+def parse_args():
+    parser = argparse.ArgumentParser(description="Train semantic segmentation model.")
+    parser.add_argument('--gpu', type=int, choices=range(0, 10), default=0, help='GPU index to use (0-9), faalback to gpu 0. Default: 0')
+    parser.add_argument('--ds_folder', default="dataset/train_val_test/",
+                        help='Dataset location, default: "dataset/train_val_test/"')
+    parser.add_argument('--grid_resolution', type=float, default=0.1, help='Grid resolution. Default: 0.1')
+    parser.add_argument('--seq_length', type=int, default=10, help='Length of past sequence. Default: 10')
+    parser.add_argument('--grid_size', type=int, default=500, help='Grid size for height map. Default: 500')
+    parser.add_argument('--prediction_horizon', type=int, default=1, help='The number of future time steps the model predicts into the future . Default: 1')
+    parser.add_argument('--augment_uwb', type=str_to_bool, default=True,
+                        help='Set augmentation of UWB signal true(1)/false(0). Default: 1')
+    parser.add_argument('--epochs', type=int, default=100, help='Number of training epochs. Default: 100')
+    parser.add_argument('--batch_size', type=int, default=40, help='Batch size. Default: 40')
+    return parser.parse_args()
+
+
+def set_gpu(gpu_index):
+    os.environ["CUDA_DEVICE_ORDER"] = "PCI_BUS_ID"
+    gpus = tf.config.experimental.list_physical_devices('GPU')
+    if gpus:
         try:
-            tf.config.experimental.set_visible_devices(gpus[0], 'GPU')  # Force TensorFlow to use GPU 1
+            tf.config.experimental.set_visible_devices(gpus[gpu_index], 'GPU')
+            tf.config.experimental.set_memory_growth(gpus[gpu_index], True)
+        except Exception as e:
+            print(f"Failed to use GPU {gpu_index}, falling back to GPU 0. Error: {e}")
+            tf.config.experimental.set_visible_devices(gpus[0], 'GPU')
             tf.config.experimental.set_memory_growth(gpus[0], True)
-        except RuntimeError as e:
-            print(e)
+
+
 
 
 def train_single_model(model_config,
@@ -35,10 +60,9 @@ def train_single_model(model_config,
                        use_velocity_auxiliary):
 
     """
-    Trainiert ein einzelnes Modell mit der gegebenen Konfiguration
+    Trains a single model using the given configuration
     """
     model_name = model_config['name']
-    model_name = model_name + ""
     model_creator = model_config['creator']
 
     print("\n" + "=" * 70)
@@ -48,7 +72,7 @@ def train_single_model(model_config,
     train_dataset = train_gen.dataset
     val_dataset = val_gen.dataset
 
-    # Modell erstellen
+    # Create model
     model = model_creator(
         grid_size=grid_size,
         num_layers=train_gen.num_channels,
@@ -58,7 +82,7 @@ def train_single_model(model_config,
         gru_units=96
     )
 
-    # Modell kompilieren
+    # Compile model
     if use_velocity_auxiliary:
         model = model_factory.TrainingSetup.compile_model(model)
         monitor_metric = 'val_position_loss'
@@ -76,7 +100,7 @@ def train_single_model(model_config,
         monitor=monitor_metric
     )
 
-    # Model Summary
+    # Model summary
     print("\n" + "-" * 50)
     print("MODEL SUMMARY")
     print("-" * 50)
@@ -105,7 +129,7 @@ def train_single_model(model_config,
         verbose=1
     )
 
-    # Training Results
+    # Training results
     print("\n" + "-" * 50)
     print(f"TRAINING COMPLETED: {model_name}")
     print("-" * 50)
@@ -141,8 +165,8 @@ def train_single_model(model_config,
 
     # Evaluation
     """
-        Evaluiert ein trainiertes Modell
-        """
+    Evaluates a trained model
+    """
     print("\n" + "-" * 50)
     print(f"EVALUATING MODEL: {save_model_path}")
     print("-" * 50)
@@ -173,7 +197,6 @@ def train_single_model(model_config,
 
     print(f"\nEvaluation log saved to: {log_path}")
 
-
     results[model_name] = {
         'model_path': save_model_path,
         'best_val_loss': best_val_loss,
@@ -189,21 +212,27 @@ def train_single_model(model_config,
 
 if __name__ == "__main__":
 
+    args = parse_args()
+
     print(f"tensorflow version: {tf.__version__}")
+
+    # Set GPU
+    set_gpu(args.gpu)
 
     # ========================================
     # DATASET CONFIGURATION
     # ========================================
-    dataset_folder = "dataset/train_val_test/"
-    grid_resolution = 0.1
-    seq_length = 10
-    grid_size = 500
-    batch_size = 40
-    epochs = 100
-    augment_uwb = False
-    # default für (fast) alle Modelle; das erste Modell wird explizit überschrieben
+    dataset_folder = args.ds_folder
+    grid_resolution = args.grid_resolution
+    seq_length = args.seq_length
+    grid_size = args.grid_size
+    prediction_horizon = args.prediction_horizon
+    augment_uwb = args.augment_uwb
+    # default for (almost) all models; the first model is explicitly overridden
     use_velocity_auxiliary_default = True
-    prediction_horizon = 1
+    batch_size = args.batch_size
+    epochs = args.epochs
+
 
     # ========================================
     # MODEL CONFIGURATIONS
@@ -215,7 +244,7 @@ if __name__ == "__main__":
                 grid_size=kwargs['grid_size'],
                 num_layers=kwargs['num_layers'],
                 sequence_length=kwargs['sequence_length'],
-                gru_units=64  # Unterschiedliche GRU units für dieses Modell
+                gru_units=64  # Different GRU units for this model
             )
         },
         {
@@ -238,7 +267,7 @@ if __name__ == "__main__":
     results = {}
 
     for idx, model_config in enumerate(models_to_train):
-        # Für das erste Modell (Index 0) velocity auxiliary ausschalten
+        # Disable velocity auxiliary for the first model (index 0)
         model_use_velocity_auxiliary = False if idx == 0 else use_velocity_auxiliary_default
 
         try:
@@ -252,7 +281,7 @@ if __name__ == "__main__":
                 train_ratio=0.8,
                 val_ratio=0.1,
                 test_ratio=0.1,
-                lidar_dropout_prob=0.0,  # 5 % lidar dropout to simulate no lidar data available
+                lidar_dropout_prob=0.05,  # 5% lidar dropout to simulate missing lidar data
                 prediction_horizon=prediction_horizon,
                 use_velocity_auxiliary=model_use_velocity_auxiliary,
                 augment_uwb=augment_uwb
@@ -264,15 +293,14 @@ if __name__ == "__main__":
                 grid_resolution=grid_resolution,
                 seq_length=seq_length,
                 batch_size=batch_size,
-                mode='test',
+                mode='val',
                 train_ratio=0.8,
                 val_ratio=0.1,
                 test_ratio=0.1,
-                lidar_dropout_prob=0.05,  # 5 % lidar dropout to simulate no lidar data available
+                lidar_dropout_prob=0.05,  # 5% lidar dropout to simulate missing lidar data
                 prediction_horizon=prediction_horizon,
                 use_velocity_auxiliary=model_use_velocity_auxiliary,
             )
-
 
             model_path, history, best_val_loss, results = train_single_model(
                 model_config=model_config,
@@ -287,7 +315,7 @@ if __name__ == "__main__":
             )
 
         except Exception as e:
-            print(f"\n ERROR training {model_config['name']}: {str(e)}")
+            print(f"\nERROR training {model_config['name']}: {str(e)}")
             continue
 
     # ========================================
