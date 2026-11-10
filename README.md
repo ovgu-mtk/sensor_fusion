@@ -63,7 +63,7 @@ By fusing it with LiDAR, we leverage the high spatial precision of point clouds 
 and achieve the robust tracking required for reliable Follow-Me behavior.
 
 
-<img src="doc/uwb_noise.png" alt="trajectories" width="1000"/><\br>
+<img src="doc/uwb_noise.png" alt="trajectories" width="1000"/>
 
 *UWB positioning data in relative vehicle coordinates: Measurements are shown
 at distances of 1 m, 2 m, and 3 m to the right, left, front, and rear of the vehicle
