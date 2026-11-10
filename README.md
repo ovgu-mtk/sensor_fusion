@@ -7,8 +7,7 @@ Relative position estimation based on multimodal sensor fusion of Ultra-Wideband
 > or use helper scripts: download_dataset.sh (shell) download_dataset.py (python)
 
 > Academic or research purposes, please contact:  
-> [stefan.sass@ovgu.de](mailto:stefan.sass@ovgu.de)  
-> [markus.hoefer@ovgu.de](mailto:markus.hoefer@ovgu.de)
+> [mtk@ovgu.de](mailto:mtk@ovgu.de)  
 
 ## download dataset
 
